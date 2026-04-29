@@ -1,6 +1,6 @@
 # 童聲記錄 (Child Voice Logger)
 
-建立一個簡單的語音記錄庫記錄兒童的各種聲音。
+建立一個簡單的語音記錄庫記錄兒童成長的各種聲音。
 單界面直接上傳和播放，方便上傳，方便聽。
 直接識別檔案名，方便之後再整理。
 
@@ -23,7 +23,7 @@ pip install -r requirements.txt
 APP_USER=你的帳號 APP_PASS=你的密碼 uvicorn app.main:app --host 0.0.0.0 --port 9006
 ```
 
-4. 開啟瀏覽器進入 http://localhost:9006，輸入帳號密碼即可使用
+4. 開啟瀏覽器進入 http://localhost:9006 ，輸入帳號密碼即可使用
 
 開發模式加上 `--reload`：
 
@@ -56,7 +56,7 @@ services:
 docker compose up -d
 ```
 
-3. 開啟瀏覽器進入 http://localhost:9006，輸入帳號密碼即可使用
+3. 開啟瀏覽器進入 http://localhost:9006 ，輸入帳號密碼即可使用
 
 自行建置：
 
