@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ "回收站" if lang == "zh" else "Trash" }} - {{ "童聲記錄" if lang == "zh" else "Child Voice Logger" }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: auto;
+            padding: 10px;
+        }
+        h2 { text-align: center; }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .date {
+            width: 120px;
+            font-weight: bold;
+            flex-shrink: 0;
+            margin-right: 10px;
+        }
+        .desc {
+            flex: 1;
+            margin-bottom: 5px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 5px;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+        .btn {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 0.9em;
+            background: white;
+        }
+        .btn-restore { color: #4CAF50; }
+        .btn-perm-delete { color: #f44336; }
+        audio {
+            width: 100%;
+            max-width: 100%;
+            margin-top: 5px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 15px;
+            text-decoration: none;
+            color: #666;
+        }
+        @media (max-width: 480px) {
+            .date {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            .desc {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<a href="/" class="back-link">← {{ "返回" if lang == "zh" else "Back" }}</a>
+<h2>🗑️ {{ "回收站" if lang == "zh" else "Trash" }}</h2>
+
+{% if files|length == 0 %}
+<p style="text-align:center;color:#999;">{{ "回收站是空的" if lang == "zh" else "Trash is empty" }}</p>
+{% endif %}
+
+{% for file in files %}
+<div class="row">
+    {% set parts = file.replace(".mp3","").split("_",1) %}
+    <div class="date">{{ parts[0] }}</div>
+    <div class="desc">{{ parts[1] }}</div>
+    <div class="btn-group">
+        <button class="btn btn-restore" onclick="restoreFile('{{ file }}')">{{ "還原" if lang == "zh" else "Restore" }}</button>
+        <button class="btn btn-perm-delete" onclick="permDelete('{{ file }}')">{{ "永久刪除" if lang == "zh" else "Delete Permanently" }}</button>
+    </div>
+    <audio controls data-src="/files/{{ file }}" preload="none">
+        <source type="audio/mpeg">
+    </audio>
+</div>
+{% endfor %}
+
+<div style="position:fixed;bottom:0;left:0;right:0;text-align:center;color:#999;font-size:12px;padding:8px;background:rgba(255,255,255,0.9);border-top:1px solid #eee;">
+    童聲記錄 v{{ version }}
+</div>
+
+<script>
+    async function restoreFile(filename) {
+        if (!confirm('{{ "確定要還原這條錄音嗎？" if lang == "zh" else "Restore this recording?" }}')) return;
+        const formData = new FormData();
+        formData.append('filename', filename);
+        try {
+            const resp = await fetch('/trash/restore', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                window.location.reload();
+            } else {
+                alert('{{ "還原失敗" if lang == "zh" else "Restore failed" }}');
+            }
+        } catch (err) {
+            alert('{{ "還原出錯: " if lang == "zh" else "Restore error: " }}' + err);
+        }
+    }
+
+    async function permDelete(filename) {
+        if (!confirm('{{ "確定要永久刪除嗎？此操作無法恢復！" if lang == "zh" else "Permanently delete? This cannot be undone!" }}')) return;
+        const formData = new FormData();
+        formData.append('filename', filename);
+        try {
+            const resp = await fetch('/trash/delete', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                window.location.reload();
+            } else {
+                alert('{{ "刪除失敗" if lang == "zh" else "Delete failed" }}');
+            }
+        } catch (err) {
+            alert('{{ "刪除出錯: " if lang == "zh" else "Delete error: " }}' + err);
+        }
+    }
+
+    // Lazy load audio
+    const audioObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const audio = entry.target;
+                const src = audio.getAttribute('data-src');
+                if (src && !audio.querySelector('source').src) {
+                    audio.querySelector('source').src = src;
+                    audio.load();
+                }
+                audioObserver.unobserve(audio);
+            }
+        });
+    }, { rootMargin: '200px' });
+
+    document.querySelectorAll('audio[data-src]').forEach(audio => {
+        audioObserver.observe(audio);
+    });
+</script>
+
+</body>
+</html>
