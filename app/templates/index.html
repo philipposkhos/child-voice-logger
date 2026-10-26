@@ -6,6 +6,13 @@
     <!-- 1. 重要：讓手機自適應 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
+        .recorder { padding:20px; margin-bottom:18px; background:#fff4ef; border:1px solid #f0d5c8; border-radius:12px; }
+        .recorder h3 { margin:0 0 8px; color:#793d2b; }
+        .recorder p { color:#745c52; }
+        .recorder button { padding:10px 16px; border:1px solid #d6b3a4; border-radius:8px; cursor:pointer; margin:4px 4px 4px 0; }
+        #recordStart { background:#a84434; color:white; border-color:#a84434; }
+        button:disabled { opacity:.5; cursor:not-allowed; }
+        #recordTimer { font-variant-numeric:tabular-nums; font-weight:bold; margin-left:8px; }
         /* 全局 */
         body { 
             font-family: Arial, sans-serif; 
@@ -168,6 +175,16 @@
 <h2>{{ "童聲記錄" if lang == "zh" else "Child Voice Logger" }}</h2>
 
 <div class="upload-box">
+    <section class="recorder" aria-label="{{ '錄音' if lang == 'zh' else 'Recorder' }}">
+        <h3>🎙️ {{ '留住這一刻的聲音' if lang == 'zh' else 'Capture this moment' }}</h3>
+        <p>{{ '直接錄音，試聽後再儲存。' if lang == 'zh' else 'Record a moment, listen, then save.' }}</p>
+        <button type="button" id="recordStart">{{ '開始錄音' if lang == 'zh' else 'Start recording' }}</button>
+        <button type="button" id="recordStop" disabled>{{ '停止錄音' if lang == 'zh' else 'Stop recording' }}</button>
+        <span id="recordTimer" aria-label="Recording duration">00:00</span>
+        <p id="recordStatus" role="status" aria-live="polite"></p>
+        <audio id="recordPreview" controls hidden></audio>
+        <button type="button" id="recordDiscard" hidden>{{ '捨棄錄音' if lang == 'zh' else 'Discard recording' }}</button>
+    </section>
     <form id="uploadForm" enctype="multipart/form-data">
         {{ "日期" if lang == "zh" else "Date" }}: <input type="date" name="date" id="dateInput" required>
         {{ "說明" if lang == "zh" else "Description" }}: <input type="text" name="description" id="descInput" required>
@@ -225,11 +242,107 @@
     const progressText = document.getElementById('progressText');
     const submitBtn = document.getElementById('submitBtn');
 
+    const zh = {{ (lang == 'zh') | tojson }};
+    const say = (cn, en) => zh ? cn : en;
+    const start = document.getElementById('recordStart');
+    const stop = document.getElementById('recordStop');
+    const discard = document.getElementById('recordDiscard');
+    const preview = document.getElementById('recordPreview');
+    const recordStatus = document.getElementById('recordStatus');
+    const timer = document.getElementById('recordTimer');
+    const fileInput = document.getElementById('fileInput');
+    let recordingFile = null, recorder, stream, interval, previewUrl;
+    function clearRecording() {
+        recordingFile = null;
+        preview.pause();
+        preview.removeAttribute('src');
+        preview.hidden = discard.hidden = true;
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+        fileInput.required = true;
+    }
+    function releaseMic() {
+        clearInterval(interval);
+        if (stream) stream.getTracks().forEach(track => track.stop());
+    }
+    discard.onclick = () => {
+        clearRecording();
+        timer.textContent = '00:00';
+        recordStatus.textContent = '';
+    };
+    fileInput.addEventListener('change', clearRecording);
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        start.disabled = true;
+        recordStatus.textContent = say('錄音需要 HTTPS 及支援錄音的瀏覽器；你仍可選擇檔案上傳。', 'Recording requires HTTPS and a supported browser. You can still upload a file.');
+    }
+    start.onclick = async () => {
+        start.disabled = true;
+        submitBtn.disabled = true;
+        fileInput.disabled = true;
+        discard.disabled = true;
+        recordStatus.textContent = say('請允許使用麥克風…', 'Please allow microphone access…');
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({audio: true});
+            const mimeType = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported(t));
+            recorder = new MediaRecorder(stream, mimeType ? {mimeType} : {});
+            const chunks = [];
+            let bytes = 0, failed = false;
+            recorder.ondataavailable = e => {
+                if (e.data.size) { chunks.push(e.data); bytes += e.data.size; }
+                if (bytes > 49 * 1024 * 1024 && recorder.state === 'recording') recorder.stop();
+            };
+            recorder.onerror = () => {
+                failed = true;
+                recordStatus.textContent = say('錄音失敗，請重新錄音。', 'Recording failed. Please try again.');
+                if (recorder.state !== 'inactive') recorder.stop();
+                releaseMic();
+            };
+            recorder.onstop = () => {
+                releaseMic();
+                stop.disabled = true;
+                start.disabled = submitBtn.disabled = fileInput.disabled = discard.disabled = false;
+                if (failed || !bytes || bytes > 50 * 1024 * 1024) {
+                    recordStatus.textContent = say('未能儲存錄音，請重新錄製較短的錄音。', 'Unable to save. Please record a shorter clip.');
+                    return;
+                }
+                clearRecording();
+                const type = recorder.mimeType || chunks[0].type;
+                const ext = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+                recordingFile = new File(chunks, 'recording-' + Date.now() + '.' + ext, {type});
+                previewUrl = URL.createObjectURL(recordingFile);
+                preview.src = previewUrl;
+                preview.hidden = discard.hidden = false;
+                fileInput.value = '';
+                fileInput.required = false;
+                recordStatus.textContent = say('錄音完成！試聽後，填寫日期和說明，再按上傳儲存。', 'Ready! Listen, enter a date and description, then upload to save.');
+            };
+            recorder.start(1000);
+            stop.disabled = false;
+            const began = Date.now();
+            timer.textContent = '00:00';
+            interval = setInterval(() => {
+                const seconds = Math.floor((Date.now() - began) / 1000);
+                timer.textContent = String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+            }, 250);
+            recordStatus.textContent = say('● 錄音中…', '● Recording…');
+        } catch (error) {
+            releaseMic();
+            start.disabled = submitBtn.disabled = fileInput.disabled = discard.disabled = false;
+            recordStatus.textContent = say('無法使用麥克風，請檢查權限及裝置後重試。', 'Cannot access microphone. Check permissions and your device, then retry.');
+        }
+    };
+    stop.onclick = () => {
+        stop.disabled = true;
+        if (recorder?.state === 'recording') recorder.stop();
+    };
+    window.addEventListener('pagehide', releaseMic);
+
     uploadForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const formData = new FormData(uploadForm);
-        const file = document.getElementById('fileInput').files[0];
+        const file = recordingFile || fileInput.files[0];
+        if (recordingFile) formData.set('file', recordingFile);
         
         if (!file) {
             alert('{{ "請選擇檔案" if lang == "zh" else "Please select a file" }}');
