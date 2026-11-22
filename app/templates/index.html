@@ -5,6 +5,12 @@
     <title>{{ "童聲記錄" if lang == "zh" else "Child Voice Logger" }}</title>
     <!-- 1. 重要：讓手機自適應 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#fff4ef">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="{{ "童聲記錄" if lang == "zh" else "Child Voice Logger" }}">
     <style>
         .recorder { padding:20px; margin-bottom:18px; background:#fff4ef; border:1px solid #f0d5c8; border-radius:12px; }
         .recorder h3 { margin:0 0 8px; color:#793d2b; }
@@ -501,6 +507,15 @@
                     checkTranscodingProgress(filename);
                 }, 2000);
             });
+    }
+</script>
+
+<script>
+    // 註冊 Service Worker（PWA）
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+            console.log('Service worker registration failed:', err);
+        });
     }
 </script>
 

@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 from datetime import datetime
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, Form, Request, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -44,6 +45,21 @@ for _path in ["/app/version.txt", "version.txt"]:
         break
 
 templates = Jinja2Templates(directory="templates")
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+# PWA：服務 Worker 與 Web App Manifest
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/manifest.webmanifest")
+def pwa_manifest():
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def pwa_service_worker():
+    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
 
 def get_lang(request: Request) -> str:
     """根據瀏覽器 Accept-Language 判斷語言"""

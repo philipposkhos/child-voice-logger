@@ -1,0 +1,22 @@
+{
+    "name": "Child Voice Logger",
+    "short_name": "童聲記錄",
+    "description": "語音記錄兒童成長的各種聲音，方便上傳和聆聽。",
+    "lang": "zh",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#fff4ef",
+    "theme_color": "#a84434",
+    "icons": [
+        {
+            "src": "/static/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/static/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
