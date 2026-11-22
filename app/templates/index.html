@@ -215,9 +215,9 @@
     {% set parts = file.replace(".mp3","").split("_",1) %}
     <div class="date">{{ parts[0] }}</div>
     <div class="desc">{{ parts[1] }}</div>
-    <button class="edit-btn" onclick="openEdit('{{ file }}', '{{ parts[0] }}', '{{ parts[1] }}')">✏️</button>
+    <button class="edit-btn" data-action="edit" data-filename="{{ file }}" data-date="{{ parts[0] }}" data-desc="{{ parts[1] }}">✏️</button>
     <a class="edit-btn" href="/files/{{ file }}" download style="text-decoration:none;">⬇️</a>
-    <button class="edit-btn" onclick="deleteFile('{{ file }}')">🗑️</button>
+    <button class="edit-btn" data-action="delete" data-filename="{{ file }}">🗑️</button>
     <audio controls data-src="/files/{{ file }}" preload="none">
         <source type="audio/mpeg">
     </audio>
@@ -400,6 +400,7 @@
             });
 
             xhr.open('POST', '/upload');
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
             xhr.send(formData);
         } catch (error) {
             console.error('Error:', error);
@@ -424,7 +425,7 @@
         e.preventDefault();
         const formData = new FormData(document.getElementById('editForm'));
         try {
-            const resp = await fetch('/edit', { method: 'POST', body: formData });
+            const resp = await fetch('/edit', { method: 'POST', body: formData, headers: {'X-Requested-With': 'XMLHttpRequest'} });
             const data = await resp.json();
             if (data.status === 'ok') {
                 window.location.reload();
@@ -442,7 +443,7 @@
         const formData = new FormData();
         formData.append('filename', filename);
         try {
-            const resp = await fetch('/delete', { method: 'POST', body: formData });
+            const resp = await fetch('/delete', { method: 'POST', body: formData, headers: {'X-Requested-With': 'XMLHttpRequest'} });
             const data = await resp.json();
             if (data.status === 'ok') {
                 window.location.reload();
@@ -453,6 +454,19 @@
             alert('{{ "刪除出錯: " if lang == "zh" else "Delete error: " }}' + err);
         }
     }
+
+    // 列表按鈕：用 data-* 屬性，避免把檔名放進 onclick 造成 XSS
+    document.querySelectorAll('button[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filename = btn.dataset.filename;
+            const action = btn.dataset.action;
+            if (action === 'edit') {
+                openEdit(filename, btn.dataset.date, btn.dataset.desc);
+            } else if (action === 'delete') {
+                deleteFile(filename);
+            }
+        });
+    });
 
     // 點擊彈窗外關閉
     document.getElementById('editModal').addEventListener('click', (e) => {

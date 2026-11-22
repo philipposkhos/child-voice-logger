@@ -89,8 +89,8 @@
     <div class="date">{{ parts[0] }}</div>
     <div class="desc">{{ parts[1] }}</div>
     <div class="btn-group">
-        <button class="btn btn-restore" onclick="restoreFile('{{ file }}')">{{ "還原" if lang == "zh" else "Restore" }}</button>
-        <button class="btn btn-perm-delete" onclick="permDelete('{{ file }}')">{{ "永久刪除" if lang == "zh" else "Delete Permanently" }}</button>
+        <button class="btn btn-restore" data-action="restore" data-filename="{{ file }}">{{ "還原" if lang == "zh" else "Restore" }}</button>
+        <button class="btn btn-perm-delete" data-action="perm-delete" data-filename="{{ file }}">{{ "永久刪除" if lang == "zh" else "Delete Permanently" }}</button>
     </div>
     <audio controls data-src="/files/{{ file }}" preload="none">
         <source type="audio/mpeg">
@@ -108,7 +108,7 @@
         const formData = new FormData();
         formData.append('filename', filename);
         try {
-            const resp = await fetch('/trash/restore', { method: 'POST', body: formData });
+            const resp = await fetch('/trash/restore', { method: 'POST', body: formData, headers: {'X-Requested-With': 'XMLHttpRequest'} });
             const data = await resp.json();
             if (data.status === 'ok') {
                 window.location.reload();
@@ -125,7 +125,7 @@
         const formData = new FormData();
         formData.append('filename', filename);
         try {
-            const resp = await fetch('/trash/delete', { method: 'POST', body: formData });
+            const resp = await fetch('/trash/delete', { method: 'POST', body: formData, headers: {'X-Requested-With': 'XMLHttpRequest'} });
             const data = await resp.json();
             if (data.status === 'ok') {
                 window.location.reload();
@@ -136,6 +136,19 @@
             alert('{{ "刪除出錯: " if lang == "zh" else "Delete error: " }}' + err);
         }
     }
+
+    // 列表按鈕：用 data-* 屬性，避免 XSS
+    document.querySelectorAll('button[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filename = btn.dataset.filename;
+            const action = btn.dataset.action;
+            if (action === 'restore') {
+                restoreFile(filename);
+            } else if (action === 'perm-delete') {
+                permDelete(filename);
+            }
+        });
+    });
 
     // Lazy load audio
     const audioObserver = new IntersectionObserver((entries) => {

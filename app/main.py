@@ -3,7 +3,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, Form, Request, BackgroundTasks, Depends, HTTPException, status
+from fastapi import FastAPI, UploadFile, Form, Request, BackgroundTasks, Depends, Header, HTTPException, status
 from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,6 +11,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
 import re
 import uuid
+import threading
 
 app = FastAPI()
 security = HTTPBasic()
@@ -56,11 +57,13 @@ def validate_date(date: str) -> bool:
 
 
 def sanitize_description(description: str) -> str:
-    """移除空白、路徑分隔符與控制字元，避免路徑穿越與非法檔名。"""
+    """移除空白、路徑分隔符、控制字元與 HTML/JS 敏感字元，避免路徑穿越與 XSS。"""
     cleaned = description.replace(" ", "")
     cleaned = re.sub(r"[/\\]", "", cleaned)
     cleaned = cleaned.replace("..", "")
     cleaned = re.sub(r"[\x00-\x1f]", "", cleaned)
+    # 移除會破壞 HTML 屬性 / JS 字串的字元（防 XSS）
+    cleaned = cleaned.translate(str.maketrans("", "", "\"'`<>"))
     return cleaned
 
 
@@ -71,6 +74,13 @@ def safe_join(base_dir: str, filename: str):
     if target == base or not target.startswith(base + os.sep):
         return None
     return target
+
+
+def csrf_protect(x_requested_with: str = Header(default=None)) -> str:
+    """要求自訂 Header，避免跨站請求偽造（CSRF）。"""
+    if x_requested_with != "XMLHttpRequest":
+        raise HTTPException(status_code=403, detail="CSRF 驗證失敗")
+    return x_requested_with
 
 
 VERSION = "dev"
@@ -122,6 +132,7 @@ def index(request: Request, username: str = Depends(verify)):
 async def upload_file(
     file: UploadFile,
     username: str = Depends(verify),
+    csrf: str = Depends(csrf_protect),
     date: str = Form(...),
     description: str = Form(...),
     background_tasks: BackgroundTasks = BackgroundTasks()
@@ -158,6 +169,7 @@ async def upload_file(
 @app.post("/edit")
 async def edit_file(
     username: str = Depends(verify),
+    csrf: str = Depends(csrf_protect),
     old_filename: str = Form(...),
     date: str = Form(...),
     description: str = Form(...)
@@ -183,7 +195,7 @@ async def edit_file(
     return JSONResponse({"status": "ok", "filename": new_filename})
 
 @app.post("/delete")
-async def delete_file(username: str = Depends(verify), filename: str = Form(...)):
+async def delete_file(username: str = Depends(verify), csrf: str = Depends(csrf_protect), filename: str = Form(...)):
     """移到回收站"""
     src = safe_join(UPLOAD_DIR, filename)
     if src is None or not os.path.exists(src):
@@ -208,7 +220,7 @@ def trash_page(request: Request, username: str = Depends(verify)):
     })
 
 @app.post("/trash/restore")
-async def restore_file(username: str = Depends(verify), filename: str = Form(...)):
+async def restore_file(username: str = Depends(verify), csrf: str = Depends(csrf_protect), filename: str = Form(...)):
     """從回收站還原"""
     src = safe_join(TRASH_DIR, filename)
     if src is None or not os.path.exists(src):
@@ -222,7 +234,7 @@ async def restore_file(username: str = Depends(verify), filename: str = Form(...
     return JSONResponse({"status": "ok"})
 
 @app.post("/trash/delete")
-async def permanent_delete(username: str = Depends(verify), filename: str = Form(...)):
+async def permanent_delete(username: str = Depends(verify), csrf: str = Depends(csrf_protect), filename: str = Form(...)):
     """永久刪除"""
     path = safe_join(TRASH_DIR, filename)
     if path is None or not os.path.exists(path):
@@ -237,6 +249,8 @@ def transcode_audio(temp_path: str, output_path: str, filename: str):
         
         subprocess.run([
             "ffmpeg",
+            "-y",
+            "-nostdin",
             "-i", temp_path,
             "-vn",
             "-ar", "44100",
@@ -251,10 +265,8 @@ def transcode_audio(temp_path: str, output_path: str, filename: str):
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-        # 30秒後清除進度記錄
-        import time
-        time.sleep(30)
-        transcoding_progress.pop(filename, None)
+        # 30 秒後清除進度記錄（用 Timer，避免佔用執行緒）
+        threading.Timer(30.0, transcoding_progress.pop, args=(filename, None)).start()
 
 @app.get("/files/{filename}")
 def get_file(filename: str, username: str = Depends(verify)):
