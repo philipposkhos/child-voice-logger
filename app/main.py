@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
+import re
+import uuid
 
 app = FastAPI()
 security = HTTPBasic()
@@ -37,6 +39,39 @@ TRASH_DIR = os.path.join(UPLOAD_DIR, "trash")
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(TRASH_DIR, exist_ok=True)
+
+# --- 安全輔助：防止路徑穿越與非法檔名 ---
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def validate_date(date: str) -> bool:
+    """確認日期為合法的 YYYY-MM-DD 格式。"""
+    if not DATE_RE.match(date):
+        return False
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
+def sanitize_description(description: str) -> str:
+    """移除空白、路徑分隔符與控制字元，避免路徑穿越與非法檔名。"""
+    cleaned = description.replace(" ", "")
+    cleaned = re.sub(r"[/\\]", "", cleaned)
+    cleaned = cleaned.replace("..", "")
+    cleaned = re.sub(r"[\x00-\x1f]", "", cleaned)
+    return cleaned
+
+
+def safe_join(base_dir: str, filename: str):
+    """把 filename 解析到 base_dir 內；若試圖跳脫目錄則回傳 None。"""
+    base = os.path.realpath(base_dir)
+    target = os.path.realpath(os.path.join(base_dir, filename))
+    if target == base or not target.startswith(base + os.sep):
+        return None
+    return target
+
 
 VERSION = "dev"
 for _path in ["/app/version.txt", "version.txt"]:
@@ -86,15 +121,23 @@ def index(request: Request, username: str = Depends(verify)):
 @app.post("/upload")
 async def upload_file(
     file: UploadFile,
+    username: str = Depends(verify),
     date: str = Form(...),
     description: str = Form(...),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     # 產生新檔名
-    safe_description = description.replace(" ", "")
+    if not validate_date(date):
+        raise HTTPException(status_code=400, detail="日期格式錯誤")
+
+    safe_description = sanitize_description(description)
     filename = f"{date}_{safe_description}.mp3"
-    output_path = os.path.join(UPLOAD_DIR, filename)
-    temp_path = os.path.join(UPLOAD_DIR, "temp_" + file.filename)
+    output_path = safe_join(UPLOAD_DIR, filename)
+    if output_path is None:
+        raise HTTPException(status_code=400, detail="檔名不合法")
+
+    # 臨時檔名不要使用使用者上傳的檔名，改用隨機名稱
+    temp_path = os.path.join(UPLOAD_DIR, "temp_" + uuid.uuid4().hex)
 
     # 檢查檔案大小
     file.file.seek(0, 2)  # 移到末尾
@@ -114,18 +157,24 @@ async def upload_file(
 
 @app.post("/edit")
 async def edit_file(
+    username: str = Depends(verify),
     old_filename: str = Form(...),
     date: str = Form(...),
     description: str = Form(...)
 ):
     """編輯錄音的日期和說明"""
-    old_path = os.path.join(UPLOAD_DIR, old_filename)
-    if not os.path.exists(old_path):
+    old_path = safe_join(UPLOAD_DIR, old_filename)
+    if old_path is None or not os.path.exists(old_path):
         raise HTTPException(status_code=404, detail="檔案不存在")
 
-    safe_description = description.replace(" ", "")
+    if not validate_date(date):
+        raise HTTPException(status_code=400, detail="日期格式錯誤")
+
+    safe_description = sanitize_description(description)
     new_filename = f"{date}_{safe_description}.mp3"
-    new_path = os.path.join(UPLOAD_DIR, new_filename)
+    new_path = safe_join(UPLOAD_DIR, new_filename)
+    if new_path is None:
+        raise HTTPException(status_code=400, detail="檔名不合法")
 
     if new_path != old_path and os.path.exists(new_path):
         raise HTTPException(status_code=400, detail="同名檔案已存在")
@@ -134,12 +183,14 @@ async def edit_file(
     return JSONResponse({"status": "ok", "filename": new_filename})
 
 @app.post("/delete")
-async def delete_file(filename: str = Form(...)):
+async def delete_file(username: str = Depends(verify), filename: str = Form(...)):
     """移到回收站"""
-    src = os.path.join(UPLOAD_DIR, filename)
-    if not os.path.exists(src):
+    src = safe_join(UPLOAD_DIR, filename)
+    if src is None or not os.path.exists(src):
         raise HTTPException(status_code=404, detail="檔案不存在")
-    dst = os.path.join(TRASH_DIR, filename)
+    dst = safe_join(TRASH_DIR, filename)
+    if dst is None:
+        raise HTTPException(status_code=400, detail="檔名不合法")
     shutil.move(src, dst)
     return JSONResponse({"status": "ok"})
 
@@ -157,22 +208,24 @@ def trash_page(request: Request, username: str = Depends(verify)):
     })
 
 @app.post("/trash/restore")
-async def restore_file(filename: str = Form(...)):
+async def restore_file(username: str = Depends(verify), filename: str = Form(...)):
     """從回收站還原"""
-    src = os.path.join(TRASH_DIR, filename)
-    if not os.path.exists(src):
+    src = safe_join(TRASH_DIR, filename)
+    if src is None or not os.path.exists(src):
         raise HTTPException(status_code=404, detail="檔案不存在")
-    dst = os.path.join(UPLOAD_DIR, filename)
+    dst = safe_join(UPLOAD_DIR, filename)
+    if dst is None:
+        raise HTTPException(status_code=400, detail="檔名不合法")
     if os.path.exists(dst):
         raise HTTPException(status_code=400, detail="還原目標已存在同名檔案")
     shutil.move(src, dst)
     return JSONResponse({"status": "ok"})
 
 @app.post("/trash/delete")
-async def permanent_delete(filename: str = Form(...)):
+async def permanent_delete(username: str = Depends(verify), filename: str = Form(...)):
     """永久刪除"""
-    path = os.path.join(TRASH_DIR, filename)
-    if not os.path.exists(path):
+    path = safe_join(TRASH_DIR, filename)
+    if path is None or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="檔案不存在")
     os.remove(path)
     return JSONResponse({"status": "ok"})
@@ -205,7 +258,10 @@ def transcode_audio(temp_path: str, output_path: str, filename: str):
 
 @app.get("/files/{filename}")
 def get_file(filename: str, username: str = Depends(verify)):
-    return FileResponse(os.path.join(UPLOAD_DIR, filename))
+    path = safe_join(UPLOAD_DIR, filename)
+    if path is None or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="檔案不存在")
+    return FileResponse(path)
 
 @app.get("/progress/{filename}")
 def get_progress(filename: str, username: str = Depends(verify)):
