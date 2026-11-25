@@ -1,0 +1,18 @@
+<div id="pwa-install" hidden role="region" aria-label="{{ '加到主畫面' if lang == 'zh' else 'Add to Home Screen' }}">
+    <p class="pwa-install-copy" data-kind="native">{{ "把童聲記錄加到主畫面，之後可以像 App 一樣打開。" if lang == "zh" else "Add Child Voice Logger to your home screen so it opens like an app." }}</p>
+    <p class="pwa-install-copy" data-kind="ios">
+        {% if lang == "zh" %}
+        點 Safari 的分享按鈕
+        <svg class="pwa-share-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M12 16V4M8 8l4-4 4 4M6 12v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-6"/></svg>
+        ，再選「加入主畫面」。
+        {% else %}
+        In Safari, tap Share
+        <svg class="pwa-share-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M12 16V4M8 8l4-4 4 4M6 12v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-6"/></svg>
+        , then “Add to Home Screen”.
+        {% endif %}
+    </p>
+    <div class="pwa-install-actions">
+        <button type="button" class="pwa-install-action" data-action="install">{{ "加到主畫面" if lang == "zh" else "Add to Home Screen" }}</button>
+        <button type="button" class="pwa-install-dismiss" data-action="dismiss" aria-label="{{ '關閉' if lang == 'zh' else 'Dismiss' }}">×</button>
+    </div>
+</div>

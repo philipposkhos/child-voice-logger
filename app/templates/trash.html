@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/static/install-banner.css">
     <meta name="theme-color" content="#fff4ef">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -170,6 +171,8 @@
     });
 </script>
 
+{% include "_install_banner.html" %}
+<script src="/static/install-banner.js"></script>
 <script>
     // 註冊 Service Worker（PWA）
     if ('serviceWorker' in navigator) {
